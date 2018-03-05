@@ -171,7 +171,12 @@ void fanAutoOnOff() {
 }
 
 bool isFanWallSwitchOn() {
-  if (analogRead(PIN_WALL_SWITCH_FAN) > WALL_SWITCH_ON_LEVEL_FAN) {
+  int value = analogRead(PIN_WALL_SWITCH_FAN);
+
+  PRINT_D("FAN: Wall switch sensor value: ")
+  PRINTLN_D(value);
+
+  if (value > WALL_SWITCH_ON_LEVEL_FAN) {
     return true;
   }
   return false;
