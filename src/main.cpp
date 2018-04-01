@@ -12,53 +12,96 @@ TemperatureClient *temperatureClient = new TemperatureClient();
 FotaClient *fotaClient               = new FotaClient(DEVICE_NAME);
 ESPWifiClient *wifiClient            = new ESPWifiClient(WIFI_SSID, WIFI_PASS);
 
-long lastStatusMsgSentAt        = 0;
-long lastHumidityCheckedAt      = 0;
-bool isFanPowerOn               = false;
-long fanPoweredOnAt             = 0;
-bool lastFanWallSwitchStatus    = false;
-long lastFanWallSwitchCheckedAt = 0;
+// Fan variables
+unsigned long fanLastStatusMsgSentAt           = 0;
+unsigned long lastHumidityCheckedAt            = 0;
+bool isFanPoweredOn                            = false;
+unsigned long fanPoweredOnAt                   = 0;
+bool isFanPoweredOnManually                    = false;
+bool lastFanWallSwitchStatus                   = false;
+unsigned long lastFanWallSwitchStatusCheckedAt = 0;
+
+// Lamp variables
+unsigned long lampLastStatusMsgSentAt           = 0;
+unsigned long lastMotionDetectedStatusCheckedAt = 0;
+unsigned long lastMotionDetectedStatusAt        = 0;
+bool isLampPoweredOn                            = false;
+
 
 void setFanPowerStatus(bool isOn) {
   PRINT("FAN: Setting fan to: ");
 
   if (isOn) {
-    digitalWrite(PIN_RELAY, HIGH);
+    digitalWrite(PIN_RELAY_FAN, HIGH);
     fanPoweredOnAt = millis();
     PRINTLN("ON");
   } else {
-    digitalWrite(PIN_RELAY, LOW);
+    digitalWrite(PIN_RELAY_FAN, LOW);
     PRINTLN("OFF");
   }
-  isFanPowerOn = isOn;
+  isFanPoweredOn = isOn;
+}
+
+void setLampPowerStatus(bool isOn) {
+  PRINT("LAMP: Setting lamp to: ");
+
+  if (isOn) {
+    digitalWrite(PIN_RELAY_LAMP, HIGH);
+    lastMotionDetectedStatusAt = millis();
+    PRINTLN("ON");
+  } else {
+    digitalWrite(PIN_RELAY_LAMP, LOW);
+    PRINTLN("OFF");
+  }
+  isLampPoweredOn = isOn;
+}
+
+unsigned long publishStatus(const char   *topic,
+                            bool          isPoweredOn,
+                            unsigned long lastStatusMsgSentAt,
+                            bool          forcePublish = false,
+                            const char   *messageId    = NULL) {
+  unsigned long now = millis();
+
+  if ((!forcePublish) and (now - lastStatusMsgSentAt < MQTT_PUBLISH_STATUS_INTERVAL)) {
+    return lastStatusMsgSentAt;
+  }
+  const size_t bufferSize = JSON_OBJECT_SIZE(1) + JSON_OBJECT_SIZE(3);
+  DynamicJsonBuffer jsonBuffer(bufferSize);
+  JsonObject& root   = jsonBuffer.createObject();
+  JsonObject& status = root.createNestedObject("status");
+
+  if (messageId != NULL) {
+    root["messageId"] = messageId;
+  }
+
+  status["powerOn"] = isPoweredOn;
+
+  // convert to String
+  String outString;
+  root.printTo(outString);
+
+  // publish the message
+  mqttClient->publish(topic, outString);
+  return now;
 }
 
 void fanPublishStatus(bool        forcePublish = false,
                       const char *messageId    = NULL) {
-  long now = millis();
+  fanLastStatusMsgSentAt = publishStatus(MQTT_TOPIC_FAN_GET,
+                                         isFanPoweredOn,
+                                         fanLastStatusMsgSentAt,
+                                         forcePublish,
+                                         messageId);
+}
 
-  if ((forcePublish) or (now - lastStatusMsgSentAt >
-                         MQTT_PUBLISH_STATUS_INTERVAL)) {
-    lastStatusMsgSentAt = now;
-
-    const size_t bufferSize = JSON_OBJECT_SIZE(1) + JSON_OBJECT_SIZE(3);
-    DynamicJsonBuffer jsonBuffer(bufferSize);
-    JsonObject& root   = jsonBuffer.createObject();
-    JsonObject& status = root.createNestedObject("status");
-
-    if (messageId != NULL) {
-      root["messageId"] = messageId;
-    }
-
-    status["powerOn"] = isFanPowerOn;
-
-    // convert to String
-    String outString;
-    root.printTo(outString);
-
-    // publish the message
-    mqttClient->publish(MQTT_TOPIC_GET, outString);
-  }
+void lampPublishStatus(bool        forcePublish = false,
+                       const char *messageId    = NULL) {
+  lampLastStatusMsgSentAt = publishStatus(MQTT_TOPIC_LAMP_GET,
+                                          isLampPoweredOn,
+                                          lampLastStatusMsgSentAt,
+                                          forcePublish,
+                                          messageId);
 }
 
 void fanHandleRequest(String payload) {
@@ -81,13 +124,13 @@ void fanHandleRequest(String payload) {
   const char *powerOnChar = status.get<const char *>("powerOn");
 
   if (powerOnChar) {
-    bool isFanPowerOnNew = (strcasecmp(powerOnChar, "true") == 0);
+    bool isFanPoweredOnNew = (strcasecmp(powerOnChar, "true") == 0);
 
-    if (isFanPowerOnNew == isFanPowerOn) {
+    if (isFanPoweredOnNew == isFanPoweredOn) {
       PRINTLN("FAN: No need to set the state, as it is already set.");
       return;
     }
-    setFanPowerStatus(isFanPowerOnNew);
+    setFanPowerStatus(isFanPoweredOnNew);
     const char *messageId = root.get<const char *>("messageId");
     fanPublishStatus(true, messageId);
   }
@@ -105,7 +148,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   String payloadString = String(spayload);
 
   // Do something according the topic
-  if (strcmp(topic, MQTT_TOPIC_SET) == 0) {
+  if (strcmp(topic, MQTT_TOPIC_FAN_SET) == 0) {
     fanHandleRequest(payloadString);
   }
   else {
@@ -114,9 +157,33 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   }
 }
 
+bool isMotionDetected() {
+  int value = digitalRead(PIN_MOTION_SENSOR);
+
+  PRINT_D("MOTION SENSOR: Motion ")
+
+  if (value == HIGH) {
+    PRINTLN_D("DETECTED.");
+    return true;
+  }
+  PRINTLN_D("not detected.");
+  return false;
+}
+
 void setup() {
-  pinMode(PIN_RELAY, OUTPUT);
-  digitalWrite(PIN_RELAY, LOW);
+  // fan
+  pinMode(PIN_RELAY_FAN, OUTPUT);
+  digitalWrite(PIN_RELAY_FAN, LOW);
+
+  // lamp
+  pinMode(PIN_RELAY_LAMP, OUTPUT);
+  digitalWrite(PIN_RELAY_LAMP, LOW);
+
+  // wall switch
+  pinMode(PIN_WALL_SWITCH_FAN, INPUT);
+
+  // motion sensor
+  pinMode(PIN_MOTION_SENSOR,   INPUT);
 
   wifiClient->init();
   mqttClient = new MqttClient(MQTT_SERVER,
@@ -124,7 +191,7 @@ void setup() {
                               DEVICE_NAME,
                               MQTT_USERNAME,
                               MQTT_PASS,
-                              MQTT_TOPIC_SET,
+                              MQTT_TOPIC_FAN_SET,
                               MQTT_SERVER_FINGERPRINT,
                               mqttCallback);
   temperatureClient->init(DEVICE_NAME,
@@ -136,13 +203,13 @@ void setup() {
   fotaClient->init();
 }
 
-void fanAutoOnOff() {
-  long now = millis();
+void fanAutoOn() {
+  unsigned long now = millis();
 
-  if ((isFanPowerOn == false) && (now - lastHumidityCheckedAt > AUTOONOFF_HUMIDITY_CHECK_INTERVAL)) {
+  if ((!isFanPoweredOn) && (now - lastHumidityCheckedAt > AUTOONOFF_HUMIDITY_CHECK_INTERVAL)) {
     lastHumidityCheckedAt = now;
     float humidity = temperatureClient->getHumidity();
-    PRINT("FAN AutoOnOFF: Humidity is ");
+    PRINT("FAN AutoOn: Humidity is ");
     PRINT(humidity);
     PRINT(", limit is ");
     PRINT(AUTOONOFF_HUMIDITY_TURN_ON)
@@ -150,20 +217,27 @@ void fanAutoOnOff() {
     if (humidity > AUTOONOFF_HUMIDITY_TURN_ON) {
       PRINTLN(". We need to start the fan.");
       setFanPowerStatus(true);
+      isFanPoweredOnManually = false;
     } else {
       PRINTLN(". We don't need to start the fan.");
     }
   }
+}
 
-  if ((isFanPowerOn == true) && (now - fanPoweredOnAt > TEMP_MAX_POWER_ON_TIME)) {
+void fanAutoOff() {
+  unsigned long now = millis();
+
+  if (isFanPoweredOn && (now - lastHumidityCheckedAt > AUTOONOFF_HUMIDITY_CHECK_INTERVAL)) {
     float humidity = temperatureClient->getHumidity();
-    PRINT("FAN AutoOnOFF: Humidity is ");
+    lastHumidityCheckedAt = now;
+    PRINT("FAN AutoOFF: Humidity is ");
     PRINT(humidity);
     PRINT(", we will turn it off once it is below ");
     PRINTLN(AUTOONOFF_HUMIDITY_TURN_OFF);
 
-    if (humidity < AUTOONOFF_HUMIDITY_TURN_OFF) {
-      PRINT("FAN AutoOnOFF: It's time to turning off the fan. The humidity is ");
+    if ((!isFanPoweredOnManually) && (humidity < AUTOONOFF_HUMIDITY_TURN_OFF) || (isFanPoweredOnManually) &&
+        (now - fanPoweredOnAt > TEMP_MAX_POWER_ON_TIME)) {
+      PRINT("FAN AutoOFF: It's time to turning off the fan. The humidity is ");
       PRINTLN(humidity);
       setFanPowerStatus(false);
     }
@@ -183,22 +257,53 @@ bool isFanWallSwitchOn() {
 }
 
 void fanManualOnOff() {
-  long now = millis();
+  unsigned long now = millis();
 
-  if (now - lastFanWallSwitchCheckedAt > MANUALONOFF_CHECK_INTERVAL) {
-    lastFanWallSwitchCheckedAt = now;
-    bool isSwitchOn = isFanWallSwitchOn();
+  if (now - lastFanWallSwitchStatusCheckedAt < MANUALONOFF_CHECK_INTERVAL) {
+    // Still not the time
+    return;
+  }
+  lastFanWallSwitchStatusCheckedAt = now;
+  bool isSwitchOn = isFanWallSwitchOn();
 
-    if (lastFanWallSwitchStatus != isSwitchOn) {
-      lastFanWallSwitchStatus = isSwitchOn;
-      setFanPowerStatus(isSwitchOn);
-      PRINT("FAN: Wall switch is ");
+  if (lastFanWallSwitchStatus != isSwitchOn) {
+    setFanPowerStatus(isSwitchOn);
+    lastFanWallSwitchStatus = isSwitchOn;
+    isFanPoweredOnManually  = true;
+    PRINT("FAN: Wall switch is ");
 
-      if (isSwitchOn) {
-        PRINTLN("ON");
-      } else {
-        PRINTLN("OFF");
-      }
+    if (isSwitchOn) {
+      PRINTLN("ON");
+    } else {
+      PRINTLN("OFF");
+    }
+  }
+}
+
+void lampAutoOnOff() {
+  unsigned long now =  millis();
+
+  if (now - lastMotionDetectedStatusCheckedAt < LAMP_CHECK_INTERVAL) {
+    // Still not the time
+    return;
+  }
+
+  lastMotionDetectedStatusCheckedAt = now;
+  bool isMotionDetectedCurrentState = isMotionDetected();
+
+  if (isMotionDetectedCurrentState) {
+    // Auto ON
+    lastMotionDetectedStatusAt = now;
+
+    if (!isLampPoweredOn) {
+      // Turn the lamp
+      setLampPowerStatus(true);
+    }
+  } else {
+    // Auto OFF
+    if (isLampPoweredOn && (now - lastMotionDetectedStatusAt > LAMP_MAX_POWER_ON_TIME)) {
+      // Time to turn off the lamp
+      setLampPowerStatus(false);
     }
   }
 }
@@ -210,6 +315,9 @@ void loop() {
   mqttClient->loop();
   temperatureClient->loop();
   fanPublishStatus();
+  lampPublishStatus();
   fanManualOnOff();
-  fanAutoOnOff();
+  fanAutoOn();
+  fanAutoOff();
+  lampAutoOnOff();
 }
