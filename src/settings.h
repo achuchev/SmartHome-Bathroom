@@ -19,8 +19,8 @@
 #define PIN_MOTION_SENSOR D6   // Microwave motion sensor
 #define PIN_WALL_SWITCH_FAN A0 // Photoresistor
 
-#define AUTOONOFF_HUMIDITY_TURN_ON 80
-#define AUTOONOFF_HUMIDITY_TURN_OFF 70
+#define AUTOONOFF_HUMIDITY_TURN_ON 99
+#define AUTOONOFF_HUMIDITY_TURN_OFF 97
 #define AUTOONOFF_HUMIDITY_CHECK_INTERVAL 10000
 
 #define WALL_SWITCH_ON_LEVEL_FAN 100
@@ -31,6 +31,6 @@
 #define TEMP_SENSOR_CORRECTION 0      // The correction in degrees
 
 #define LAMP_CHECK_INTERVAL 1000
-#define LAMP_MAX_POWER_ON_TIME 120000 // 2 min
+#define LAMP_MAX_POWER_ON_TIME 90000  // 1,5 min
 
 #endif // ifndef SETTING_H

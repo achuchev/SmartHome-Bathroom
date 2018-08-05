@@ -27,6 +27,8 @@ unsigned long lastMotionDetectedStatusCheckedAt = 0;
 unsigned long lastMotionDetectedStatusAt        = 0;
 bool isLampPoweredOn                            = false;
 
+String topics[2]   = { MQTT_TOPIC_LAMP_SET, MQTT_TOPIC_FAN_SET };
+size_t topicsCount = 2;
 
 void setFanPowerStatus(bool isOn) {
   PRINT("FAN: Setting fan to: ");
@@ -82,7 +84,7 @@ unsigned long publishStatus(const char   *topic,
   root.printTo(outString);
 
   // publish the message
-  mqttClient->publish(topic, outString);
+  mqttClient->publish(topic, outString, true);
   return now;
 }
 
@@ -136,6 +138,39 @@ void fanHandleRequest(String payload) {
   }
 }
 
+void lampHandleRequest(String payload) {
+  const size_t bufferSize = 2 * JSON_OBJECT_SIZE(1) + 30;
+  DynamicJsonBuffer jsonBuffer(bufferSize);
+  JsonObject& root = jsonBuffer.parseObject(payload);
+
+  if (!root.success()) {
+    PRINTLN_E("LAMP: JSON with \"root\" key not received.");
+    PRINTLN_E(payload);
+    return;
+  }
+  JsonObject& status = root.get<JsonObject&>("status");
+
+  if (!status.success()) {
+    PRINTLN_E("LAMP: JSON with \"status\" key not received.");
+    PRINTLN_E(payload);
+    return;
+  }
+  const char *powerOnChar = status.get<const char *>("powerOn");
+
+  if (powerOnChar) {
+    bool isLampPoweredOnNew = (strcasecmp(powerOnChar, "true") == 0);
+
+    if (isLampPoweredOnNew == isLampPoweredOn) {
+      PRINTLN("LAMP: No need to set the state, as it is already set.");
+      return;
+    }
+
+    setLampPowerStatus(isLampPoweredOnNew);
+    const char *messageId = root.get<const char *>("messageId");
+    lampPublishStatus(true, messageId);
+  }
+}
+
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
   PRINT("MQTT Message arrived [");
   PRINT(topic);
@@ -150,8 +185,9 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   // Do something according the topic
   if (strcmp(topic, MQTT_TOPIC_FAN_SET) == 0) {
     fanHandleRequest(payloadString);
-  }
-  else {
+  } else if (strcmp(topic, MQTT_TOPIC_LAMP_SET) == 0) {
+    lampHandleRequest(payloadString);
+  } else {
     PRINT("MQTT: Warning: Unknown topic: ");
     PRINTLN(topic);
   }
@@ -191,7 +227,8 @@ void setup() {
                               DEVICE_NAME,
                               MQTT_USERNAME,
                               MQTT_PASS,
-                              MQTT_TOPIC_FAN_SET,
+                              topics,
+                              topicsCount,
                               MQTT_SERVER_FINGERPRINT,
                               mqttCallback);
   temperatureClient->init(DEVICE_NAME,
@@ -237,9 +274,10 @@ void fanAutoOff() {
 
     if ((!isFanPoweredOnManually) && (humidity < AUTOONOFF_HUMIDITY_TURN_OFF) || (isFanPoweredOnManually) &&
         (now - fanPoweredOnAt > TEMP_MAX_POWER_ON_TIME)) {
-      PRINT("FAN AutoOFF: It's time to turning off the fan. The humidity is ");
+      PRINT("FAN AutoOFF: It's time to turn off the fan. Humidity is ");
       PRINTLN(humidity);
       setFanPowerStatus(false);
+      fanPublishStatus(true);
     }
   }
 }
