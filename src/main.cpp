@@ -30,34 +30,6 @@ bool isLampPoweredOn                            = false;
 String topics[2]   = { MQTT_TOPIC_LAMP_SET, MQTT_TOPIC_FAN_SET };
 size_t topicsCount = 2;
 
-void setFanPowerStatus(bool isOn) {
-  PRINT("FAN: Setting fan to: ");
-
-  if (isOn) {
-    digitalWrite(PIN_RELAY_FAN, HIGH);
-    fanPoweredOnAt = millis();
-    PRINTLN("ON");
-  } else {
-    digitalWrite(PIN_RELAY_FAN, LOW);
-    PRINTLN("OFF");
-  }
-  isFanPoweredOn = isOn;
-}
-
-void setLampPowerStatus(bool isOn) {
-  PRINT("LAMP: Setting lamp to: ");
-
-  if (isOn) {
-    digitalWrite(PIN_RELAY_LAMP, HIGH);
-    lastMotionDetectedStatusAt = millis();
-    PRINTLN("ON");
-  } else {
-    digitalWrite(PIN_RELAY_LAMP, LOW);
-    PRINTLN("OFF");
-  }
-  isLampPoweredOn = isOn;
-}
-
 unsigned long publishStatus(const char   *topic,
                             bool          isPoweredOn,
                             unsigned long lastStatusMsgSentAt,
@@ -104,6 +76,36 @@ void lampPublishStatus(bool        forcePublish = false,
                                           lampLastStatusMsgSentAt,
                                           forcePublish,
                                           messageId);
+}
+
+void setFanPowerStatus(bool isOn) {
+  PRINT("FAN: Setting fan to: ");
+
+  if (isOn) {
+    digitalWrite(PIN_RELAY_FAN, HIGH);
+    fanPoweredOnAt = millis();
+    PRINTLN("ON");
+  } else {
+    digitalWrite(PIN_RELAY_FAN, LOW);
+    PRINTLN("OFF");
+  }
+  isFanPoweredOn = isOn;
+  fanPublishStatus(true);
+}
+
+void setLampPowerStatus(bool isOn) {
+  PRINT("LAMP: Setting lamp to: ");
+
+  if (isOn) {
+    digitalWrite(PIN_RELAY_LAMP, HIGH);
+    lastMotionDetectedStatusAt = millis();
+    PRINTLN("ON");
+  } else {
+    digitalWrite(PIN_RELAY_LAMP, LOW);
+    PRINTLN("OFF");
+  }
+  isLampPoweredOn = isOn;
+  lampPublishStatus(true);
 }
 
 void fanHandleRequest(String payload) {

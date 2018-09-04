@@ -31,6 +31,6 @@
 #define TEMP_SENSOR_CORRECTION 0      // The correction in degrees
 
 #define LAMP_CHECK_INTERVAL 1000
-#define LAMP_MAX_POWER_ON_TIME 90000  // 1,5 min
+#define LAMP_MAX_POWER_ON_TIME 180000 // 1,5 min
 
 #endif // ifndef SETTING_H
