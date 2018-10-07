@@ -135,9 +135,9 @@ void fanHandleRequest(String payload) {
       return;
     }
     setFanPowerStatus(isFanPoweredOnNew);
-    const char *messageId = root.get<const char *>("messageId");
-    fanPublishStatus(true, messageId);
   }
+  const char *messageId = root.get<const char *>("messageId");
+  fanPublishStatus(true, messageId);
 }
 
 void lampHandleRequest(String payload) {
@@ -166,11 +166,10 @@ void lampHandleRequest(String payload) {
       PRINTLN("LAMP: No need to set the state, as it is already set.");
       return;
     }
-
     setLampPowerStatus(isLampPoweredOnNew);
-    const char *messageId = root.get<const char *>("messageId");
-    lampPublishStatus(true, messageId);
   }
+  const char *messageId = root.get<const char *>("messageId");
+  lampPublishStatus(true, messageId);
 }
 
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
@@ -274,8 +273,8 @@ void fanAutoOff() {
     PRINT(", we will turn it off once it is below ");
     PRINTLN(AUTOONOFF_HUMIDITY_TURN_OFF);
 
-    if ((!isFanPoweredOnManually) && (humidity < AUTOONOFF_HUMIDITY_TURN_OFF) || (isFanPoweredOnManually) &&
-        (now - fanPoweredOnAt > TEMP_MAX_POWER_ON_TIME)) {
+    if (((!isFanPoweredOnManually) && (humidity < AUTOONOFF_HUMIDITY_TURN_OFF)) ||
+        ((isFanPoweredOnManually) && (now - fanPoweredOnAt > TEMP_MAX_POWER_ON_TIME))) {
       PRINT("FAN AutoOFF: It's time to turn off the fan. Humidity is ");
       PRINTLN(humidity);
       setFanPowerStatus(false);
