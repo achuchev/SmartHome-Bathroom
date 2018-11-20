@@ -20,6 +20,8 @@ unsigned long fanPoweredOnAt                   = 0;
 bool isFanPoweredOnManually                    = false;
 bool lastFanWallSwitchStatus                   = false;
 unsigned long lastFanWallSwitchStatusCheckedAt = 0;
+unsigned long fanQuietPeriodStopAt             = 0;
+unsigned long fanQuietPeriodStartAt            = 0;
 
 // Lamp variables
 unsigned long lampLastStatusMsgSentAt           = 0;
@@ -247,18 +249,39 @@ void fanAutoOn() {
   if ((!isFanPoweredOn) && (now - lastHumidityCheckedAt > AUTOONOFF_HUMIDITY_CHECK_INTERVAL)) {
     lastHumidityCheckedAt = now;
     float humidity = temperatureClient->getHumidity();
+    PRINT_D("FAN AutoOFF: The quiet window is between ");
+    PRINT_D(fanQuietPeriodStartAt / 1000);
+    PRINT_D(" and ");
+    PRINT_D(fanQuietPeriodStopAt / 1000);
+    PRINT_D(". Currently it is ");
+    PRINTLN_D(now / 1000);
+
     PRINT("FAN AutoOn: Humidity is ");
     PRINT(humidity);
     PRINT(", limit is ");
     PRINT(AUTOONOFF_HUMIDITY_TURN_ON)
+    PRINT(". ");
 
-    if (humidity > AUTOONOFF_HUMIDITY_TURN_ON) {
-      PRINTLN(". We need to start the fan.");
+
+    if (humidity >= AUTOONOFF_HUMIDITY_TURN_ON) {
+      if ((fanQuietPeriodStartAt <= now) && (now <= fanQuietPeriodStopAt)) {
+        PRINT(
+          "The humidity is above the limit, but the quiet period is still active. If needed, the fan will start in ");
+        PRINT((fanQuietPeriodStopAt - now) / 1000);
+        PRINT(" seconds. The quiet window is between ");
+        PRINT(fanQuietPeriodStartAt / 1000);
+        PRINT(" and ");
+        PRINT(fanQuietPeriodStopAt / 1000);
+        PRINT(". Currently it is ");
+        PRINTLN(now / 1000);
+        return;
+      }
+      PRINTLN("We need to start the fan.");
       setFanPowerStatus(true);
       isFanPoweredOnManually = false;
-    } else {
-      PRINTLN(". We don't need to start the fan.");
+      return;
     }
+    PRINTLN("No need to start the fan.");
   }
 }
 
@@ -273,8 +296,22 @@ void fanAutoOff() {
     PRINT(", we will turn it off once it is below ");
     PRINTLN(AUTOONOFF_HUMIDITY_TURN_OFF);
 
-    if (((!isFanPoweredOnManually) && (humidity < AUTOONOFF_HUMIDITY_TURN_OFF)) ||
-        ((isFanPoweredOnManually) && (now - fanPoweredOnAt > TEMP_MAX_POWER_ON_TIME))) {
+    bool turnOff = false;
+
+    if ((isFanPoweredOnManually) && (now - fanPoweredOnAt > TEMP_MAX_POWER_ON_TIME)) {
+      // The fan was manually started and the time is up
+      turnOff = true;
+    }
+
+    if ((!isFanPoweredOnManually) && (humidity <= AUTOONOFF_HUMIDITY_TURN_OFF)) {
+      // The fan was automatically started and the humidity is lower than expected
+      turnOff               = true;
+      fanQuietPeriodStartAt = now;
+      fanQuietPeriodStopAt  = now + AUTOONOFF_QUIET_PERIOD;
+      PRINTLN("FAN AutoOFF: The quiet period is now set.");
+    }
+
+    if (turnOff) {
       PRINT("FAN AutoOFF: It's time to turn off the fan. Humidity is ");
       PRINTLN(humidity);
       setFanPowerStatus(false);
