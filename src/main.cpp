@@ -43,9 +43,8 @@ unsigned long publishStatus(const char   *topic,
     return lastStatusMsgSentAt;
   }
   const size_t bufferSize = JSON_OBJECT_SIZE(1) + JSON_OBJECT_SIZE(3);
-  DynamicJsonBuffer jsonBuffer(bufferSize);
-  JsonObject& root   = jsonBuffer.createObject();
-  JsonObject& status = root.createNestedObject("status");
+  DynamicJsonDocument root(bufferSize);
+  JsonObject status = root.createNestedObject("status");
 
   if (messageId != NULL) {
     root["messageId"] = messageId;
@@ -55,7 +54,7 @@ unsigned long publishStatus(const char   *topic,
 
   // convert to String
   String outString;
-  root.printTo(outString);
+  serializeJson(root, outString);
 
   // publish the message
   mqttClient->publish(topic, outString, true);
@@ -111,26 +110,33 @@ void setLampPowerStatus(bool isOn) {
 }
 
 void fanHandleRequest(String payload) {
+  // deserialize the payload to JSON
   const size_t bufferSize = 2 * JSON_OBJECT_SIZE(1) + 30;
-  DynamicJsonBuffer jsonBuffer(bufferSize);
-  JsonObject& root = jsonBuffer.parseObject(payload);
+  DynamicJsonDocument  jsonDoc(bufferSize);
+  DeserializationError error = deserializeJson(jsonDoc, payload);
 
-  if (!root.success()) {
-    PRINTLN_E("FAN: JSON with \"root\" key not received.");
-    PRINTLN_E(payload);
+  if (error) {
+    PRINT_E("Failed to deserialize the received payload. Error: ");
+    PRINTLN_E(error.c_str());
+    PRINTLN_E("The payload is: ");
+    PRINTLN_E(payload)
     return;
   }
-  JsonObject& status = root.get<JsonObject&>("status");
+  JsonObject root   = jsonDoc.as<JsonObject>();
+  JsonObject status = root["status"];
 
-  if (!status.success()) {
-    PRINTLN_E("FAN: JSON with \"status\" key not received.");
-    PRINTLN_E(payload);
+  if (status.isNull()) {
+    PRINTLN_E(
+      "FAN: The received payload is valid JSON, but \"status\" key is not found.");
+    PRINTLN_E("The payload is: ");
+    PRINTLN_E(payload)
     return;
   }
-  const char *powerOnChar = status.get<const char *>("powerOn");
 
-  if (powerOnChar) {
-    bool isFanPoweredOnNew = (strcasecmp(powerOnChar, "true") == 0);
+  JsonVariant powerOnJV = status["powerOn"];
+
+  if (!powerOnJV.isNull()) {
+    bool isFanPoweredOnNew = powerOnJV.as<bool>();
 
     if (isFanPoweredOnNew == isFanPoweredOn) {
       PRINTLN("FAN: No need to set the state, as it is already set.");
@@ -138,31 +144,38 @@ void fanHandleRequest(String payload) {
     }
     setFanPowerStatus(isFanPoweredOnNew);
   }
-  const char *messageId = root.get<const char *>("messageId");
+  const char *messageId = root["messageId"];
   fanPublishStatus(true, messageId);
 }
 
 void lampHandleRequest(String payload) {
+  // deserialize the payload to JSON
   const size_t bufferSize = 2 * JSON_OBJECT_SIZE(1) + 30;
-  DynamicJsonBuffer jsonBuffer(bufferSize);
-  JsonObject& root = jsonBuffer.parseObject(payload);
+  DynamicJsonDocument  jsonDoc(bufferSize);
+  DeserializationError error = deserializeJson(jsonDoc, payload);
 
-  if (!root.success()) {
-    PRINTLN_E("LAMP: JSON with \"root\" key not received.");
-    PRINTLN_E(payload);
+  if (error) {
+    PRINT_E("Failed to deserialize the received payload. Error: ");
+    PRINTLN_E(error.c_str());
+    PRINTLN_E("The payload is: ");
+    PRINTLN_E(payload)
     return;
   }
-  JsonObject& status = root.get<JsonObject&>("status");
+  JsonObject root   = jsonDoc.as<JsonObject>();
+  JsonObject status = root["status"];
 
-  if (!status.success()) {
-    PRINTLN_E("LAMP: JSON with \"status\" key not received.");
-    PRINTLN_E(payload);
+  if (status.isNull()) {
+    PRINTLN_E(
+      "LAMP: The received payload is valid JSON, but \"status\" key is not found.");
+    PRINTLN_E("The payload is: ");
+    PRINTLN_E(payload)
     return;
   }
-  const char *powerOnChar = status.get<const char *>("powerOn");
 
-  if (powerOnChar) {
-    bool isLampPoweredOnNew = (strcasecmp(powerOnChar, "true") == 0);
+  JsonVariant powerOnJV = status["powerOn"];
+
+  if (!powerOnJV.isNull()) {
+    bool isLampPoweredOnNew = powerOnJV.as<bool>();
 
     if (isLampPoweredOnNew == isLampPoweredOn) {
       PRINTLN("LAMP: No need to set the state, as it is already set.");
@@ -170,7 +183,7 @@ void lampHandleRequest(String payload) {
     }
     setLampPowerStatus(isLampPoweredOnNew);
   }
-  const char *messageId = root.get<const char *>("messageId");
+  const char *messageId = root["messageId"];
   lampPublishStatus(true, messageId);
 }
 
@@ -263,25 +276,35 @@ void fanAutoOn() {
     PRINT(". ");
 
 
-    if (humidity >= AUTOONOFF_HUMIDITY_TURN_ON) {
-      if ((fanQuietPeriodStartAt <= now) && (now <= fanQuietPeriodStopAt)) {
-        PRINT(
-          "The humidity is above the limit, but the quiet period is still active. If needed, the fan will start in ");
-        PRINT((fanQuietPeriodStopAt - now) / 1000);
-        PRINT(" seconds. The quiet window is between ");
-        PRINT(fanQuietPeriodStartAt / 1000);
-        PRINT(" and ");
-        PRINT(fanQuietPeriodStopAt / 1000);
-        PRINT(". Currently it is ");
-        PRINTLN(now / 1000);
-        return;
-      }
-      PRINTLN("We need to start the fan.");
-      setFanPowerStatus(true);
-      isFanPoweredOnManually = false;
+    if (humidity < AUTOONOFF_HUMIDITY_TURN_ON) {
+      PRINTLN("No need to start the fan.");
       return;
     }
-    PRINTLN("No need to start the fan.");
+
+    if ((fanQuietPeriodStartAt <= now) && (now <= fanQuietPeriodStopAt)) {
+      PRINT(
+        "The humidity is above the limit, but the quiet period is still active. If needed, the fan will start in ");
+      PRINT((fanQuietPeriodStopAt - now) / 1000);
+      PRINT(" seconds. The quiet period is between ");
+      PRINT(fanQuietPeriodStartAt / 1000);
+      PRINT(" and ");
+      PRINT(fanQuietPeriodStopAt / 1000);
+      PRINT(". Currently it is ");
+      PRINTLN(now / 1000);
+      return;
+    }
+    fanQuietPeriodStartAt = now + FAN_MAX_POWER_ON_TIME;
+    fanQuietPeriodStopAt  = fanQuietPeriodStartAt + AUTOONOFF_QUIET_PERIOD;
+
+    PRINT("We need to start the fan. The quiet period is between ");
+    PRINT(fanQuietPeriodStartAt / 1000);
+    PRINT(" and ");
+    PRINT(fanQuietPeriodStopAt / 1000);
+    PRINT(". Currently it is ");
+    PRINTLN(now / 1000);
+
+    setFanPowerStatus(true);
+    isFanPoweredOnManually = false;
   }
 }
 
@@ -298,7 +321,7 @@ void fanAutoOff() {
 
     bool turnOff = false;
 
-    if ((isFanPoweredOnManually) && (now - fanPoweredOnAt > TEMP_MAX_POWER_ON_TIME)) {
+    if ((isFanPoweredOnManually) && (now - fanPoweredOnAt > FAN_MAX_POWER_ON_TIME)) {
       // The fan was manually started and the time is up
       turnOff = true;
     }
@@ -343,6 +366,10 @@ void fanManualOnOff() {
   bool isSwitchOn = isFanWallSwitchOn();
 
   if (lastFanWallSwitchStatus != isSwitchOn) {
+    // reset the quite period
+    fanQuietPeriodStartAt = 0;
+    fanQuietPeriodStopAt  = 0;
+
     setFanPowerStatus(isSwitchOn);
     lastFanWallSwitchStatus = isSwitchOn;
     isFanPoweredOnManually  = true;
