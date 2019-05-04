@@ -42,8 +42,8 @@ unsigned long publishStatus(const char   *topic,
   if ((!forcePublish) and (now - lastStatusMsgSentAt < MQTT_PUBLISH_STATUS_INTERVAL)) {
     return lastStatusMsgSentAt;
   }
-  const size_t bufferSize = JSON_OBJECT_SIZE(1) + JSON_OBJECT_SIZE(3);
-  DynamicJsonDocument root(bufferSize);
+  const size_t capacity = JSON_OBJECT_SIZE(1) + JSON_OBJECT_SIZE(2);
+  DynamicJsonDocument root(capacity);
   JsonObject status = root.createNestedObject("status");
 
   if (messageId != NULL) {
@@ -111,8 +111,8 @@ void setLampPowerStatus(bool isOn) {
 
 void fanHandleRequest(String payload) {
   // deserialize the payload to JSON
-  const size_t bufferSize = 2 * JSON_OBJECT_SIZE(1) + 30;
-  DynamicJsonDocument  jsonDoc(bufferSize);
+  const size_t capacity = JSON_OBJECT_SIZE(1) + JSON_OBJECT_SIZE(2) + 70;
+  DynamicJsonDocument  jsonDoc(capacity);
   DeserializationError error = deserializeJson(jsonDoc, payload);
 
   if (error) {
@@ -150,8 +150,8 @@ void fanHandleRequest(String payload) {
 
 void lampHandleRequest(String payload) {
   // deserialize the payload to JSON
-  const size_t bufferSize = 2 * JSON_OBJECT_SIZE(1) + 30;
-  DynamicJsonDocument  jsonDoc(bufferSize);
+  const size_t capacity = JSON_OBJECT_SIZE(1) + JSON_OBJECT_SIZE(2) + 70;
+  DynamicJsonDocument  jsonDoc(capacity);
   DeserializationError error = deserializeJson(jsonDoc, payload);
 
   if (error) {
