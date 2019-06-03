@@ -24,10 +24,9 @@ unsigned long fanQuietPeriodStopAt             = 0;
 unsigned long fanQuietPeriodStartAt            = 0;
 
 // Lamp variables
-unsigned long lampLastStatusMsgSentAt           = 0;
-unsigned long lastMotionDetectedStatusCheckedAt = 0;
-unsigned long lastMotionDetectedStatusAt        = 0;
-bool isLampPoweredOn                            = false;
+unsigned long lampLastStatusMsgSentAt    = 0;
+unsigned long lastMotionDetectedStatusAt = 0;
+bool isLampPoweredOn                     = false;
 
 String topics[2]   = { MQTT_TOPIC_LAMP_SET, MQTT_TOPIC_FAN_SET };
 size_t topicsCount = 2;
@@ -212,13 +211,10 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
 bool isMotionDetected() {
   int value = digitalRead(PIN_MOTION_SENSOR);
 
-  PRINT_D("MOTION SENSOR: Motion ")
-
+  // No logging here or it will flood the log
   if (value == HIGH) {
-    PRINTLN_D("DETECTED.");
     return true;
   }
-  PRINTLN_D("not detected.");
   return false;
 }
 
@@ -257,6 +253,8 @@ void setup() {
 }
 
 void fanAutoOn() {
+  // FIXME: Remove the "return" once I replace the humidity sensor
+  return;
   unsigned long now = millis();
 
   if ((!isFanPoweredOn) && (now - lastHumidityCheckedAt > AUTOONOFF_HUMIDITY_CHECK_INTERVAL)) {
@@ -384,14 +382,7 @@ void fanManualOnOff() {
 }
 
 void lampAutoOnOff() {
-  unsigned long now =  millis();
-
-  if (now - lastMotionDetectedStatusCheckedAt < LAMP_CHECK_INTERVAL) {
-    // Still not the time
-    return;
-  }
-
-  lastMotionDetectedStatusCheckedAt = now;
+  unsigned long now                 =  millis();
   bool isMotionDetectedCurrentState = isMotionDetected();
 
   if (isMotionDetectedCurrentState) {
